@@ -7,6 +7,10 @@ const information = document.getElementById("information");
 const icon = document.getElementById("image");
 const errorMessage = document.getElementById("error");
 const details = document.getElementById("details");
+const temperature = document.querySelector(".temp");
+const cityName = document.querySelector(".city");
+const humidity = document.getElementById("humiditylvl");
+const windSpeed = document.getElementById("windspeed");
 
 const cityImages = new Set([
     "athens", "beijing", "budapest", "buenosaires", "cairo", "delhi",
@@ -17,6 +21,7 @@ const cityImages = new Set([
 
 const requestTimeoutMs = 8000;
 let showingResult = false;
+let searchId = 0;
 
 searchZone.addEventListener("focus", expandSearch);
 searchZone.addEventListener("click", expandSearch);
@@ -38,20 +43,26 @@ function expandSearch() {
 async function handleSearch(event) {
     event.preventDefault();
 
+    if (showingResult) return;
+
     const city = searchZone.value.trim();
     if (!city) {
         searchZone.focus();
         return;
     }
 
+    const currentSearch = ++searchId;
     setLoadingState();
 
     try {
         const location = await findCity(city);
+        if (currentSearch !== searchId) return;
         const currentWeather = await getCurrentWeather(location);
+        if (currentSearch !== searchId) return;
         renderWeather(location, currentWeather);
-        updateBackground(city, location);
+        updateBackground(city, location, currentSearch);
     } catch (error) {
+        if (currentSearch !== searchId) return;
         if (error.name === "AbortError") {
             showError("The request timed out. Please try again.");
             return;
@@ -71,11 +82,12 @@ function setLoadingState() {
     errorMessage.style.display = "none";
     icon.style.display = "none";
     details.style.display = "none";
-    document.querySelector(".temp").textContent = "";
-    document.querySelector(".city").textContent = "Loading...";
+    temperature.textContent = "";
+    cityName.textContent = "Loading...";
 }
 
 function resetSearch() {
+    searchId += 1;
     showingResult = false;
     searchForm.style.display = "flex";
     weather.style.display = "none";
@@ -113,7 +125,8 @@ async function getCurrentWeather(location) {
     });
 
     const data = await fetchJson(url);
-    if (!data.current) {
+    const fields = ["temperature_2m", "relative_humidity_2m", "weather_code", "wind_speed_10m"];
+    if (!data.current || !fields.every((field) => Number.isFinite(data.current[field]))) {
         throw new Error("Weather service returned incomplete data.");
     }
 
@@ -143,11 +156,11 @@ function renderWeather(location, current) {
     errorMessage.style.display = "none";
     icon.style.display = "block";
     details.style.display = "flex";
-    document.querySelector(".city").textContent = location.name;
-    document.querySelector(".temp").textContent = Math.round(current.temperature_2m) + "°C";
-    document.getElementById("humiditylvl").textContent =
+    cityName.textContent = location.name;
+    temperature.textContent = Math.round(current.temperature_2m) + "°C";
+    humidity.textContent =
         Math.round(current.relative_humidity_2m) + "%";
-    document.getElementById("windspeed").textContent =
+    windSpeed.textContent =
         Math.round(current.wind_speed_10m) + " km/h";
     icon.src = "images/props/" + presentation.icon;
     icon.alt = presentation.description;
@@ -156,8 +169,8 @@ function renderWeather(location, current) {
 function showError(message) {
     errorMessage.textContent = message;
     errorMessage.style.display = "block";
-    document.querySelector(".city").textContent = "";
-    document.querySelector(".temp").textContent = "";
+    cityName.textContent = "";
+    temperature.textContent = "";
     icon.style.display = "none";
     details.style.display = "none";
 }
@@ -168,17 +181,17 @@ function setBackground(path) {
     searchContainer.style.backgroundSize = "cover";
 }
 
-function updateBackground(city, location) {
+function updateBackground(city, location, currentSearch) {
     const imageKey = city.replace(/\s/g, "").toLowerCase();
     if (cityImages.has(imageKey)) {
         setBackground("images/cities/" + imageKey + ".png");
         return;
     }
 
-    setRegionalBackground(location);
+    setRegionalBackground(location, currentSearch);
 }
 
-async function setRegionalBackground(location) {
+async function setRegionalBackground(location, currentSearch) {
     if (!location.country_code) {
         return;
     }
@@ -192,7 +205,7 @@ async function setRegionalBackground(location) {
         const continent = country.continents && country.continents[0];
         const region = WeatherUtils.getRegionName(continent);
 
-        if (!region) {
+        if (!region || currentSearch !== searchId) {
             return;
         }
 
